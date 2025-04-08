@@ -30,7 +30,7 @@ connectDB(); // Uncomment if you want to connect to MongoDB here
 //Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-// app.use('/api/tasks', taskRoutes);
+app.use('/api/tasks', taskRoutes);
 // app.use('/api/reports', reportRoutes);
 
 // Start the server
