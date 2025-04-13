@@ -2,7 +2,66 @@ const Task = require("../models/Task"); // Assuming you have a Task model define
 
 // Get all tasks for the logged-in user
 const getTasks = async (req, res) => {
+
   try {
+    const { status} = req.query; // Get status from query parameters
+    let filter = {};
+    if (status) {
+      filter.status = status; // Filter by status if provided
+    }
+  
+    let tasks;
+  
+    if (req.user.role === "admin") {
+      // If the user is an admin, fetch all tasks
+      tasks = await Task.find(filter).populate("assignedTo", "name email profileImageUrl").populate("createdBy", "name email");
+    }
+    else {
+      tasks = await Task.find({ ...filter, assignedTo: req.user._id })
+        .populate("assignedTo", "name email profileImageUrl")
+    }
+  
+    // Add Completed Tasks Count to each task
+    tasks = await Promise.all(
+      tasks.map(async (task) => {
+        const completedCount = task.todoChecklist.filter((item) => item.completed).length;
+        return {
+          ...task._doc,
+          completedTodoCount : completedCount,
+        };
+      })
+  
+    );
+
+    // Status sumary 
+    const allTasks = await Task.find({ assignedTo: req.user._id });
+    const pendingTasks = await Task.countDocuments({
+      ...filter,
+      status: "pending",
+      ...(req.user.role !== "admin" && { assignedTo: req.user._id }),
+    });
+
+    const inProgressTasks = await Task.countDocuments({
+      ...filter,
+      status: "in-progress",
+      ...(req.user.role !== "admin" && { assignedTo: req.user._id }),
+    });
+
+    const completedTasks = await Task.countDocuments({
+      ...filter,
+      status: "completed",
+      ...(req.user.role !== "admin" && { assignedTo: req.user._id }),
+    });
+
+    res.status(200).json({
+     tasks,
+     statusSummary: {
+        allTasks: allTasks.length,
+        pendingTasks,
+        inProgressTasks,
+        completedTasks,
+      },
+    });
   } catch (error) {
     res.status(500).json({ message: "Error fetching tasks", error });
   }
@@ -61,6 +120,27 @@ const createTask = async (req, res) => {
 // Update a task by ID for the logged-in user
 const updateTask = async (req, res) => {
   try {
+
+    const task = await Task.findById(req.params.id);
+
+    if(!task) return res.status(404).json({message : "Task not found"});
+
+    task.title = req.body.title || task.title;
+    task.description = req.body.description || task.description;
+    task.priority = req.body.priority || task.priority;
+    task.dueDate = req.body.dueDate || task.dueDate;
+    task.todoChecklist = req.body.todoChecklist || task.todoChecklist;
+    task.attachments = req.body.attachments || task.attachments;
+
+    if (req.body.assignedTo) {
+      if(!Array.isArray(req.body.assignedTo)) {
+        return res.status(400).json({message : "assignedTo must be an array of user Ids"})
+      }
+      task.assignedTo = req.body.assignedTo;
+    }
+
+    const updatedTask = await task.save();
+    res.json({message : "Task updated successfully", updateTask})
   } catch (error) {
     res.status(500).json({ message: "Error fetching tasks", error });
   }
@@ -77,6 +157,13 @@ const deleteTask = async (req, res) => {
 // Get a task by ID for the logged-in user
 const getTaskBy = async (req, res) => {
   try {
+    const task = await Task.findById(req.params.id).populate("assignedTo", "name email profileImageUrl")
+    
+    if(!task) return res.status(404).json({message : "Task not found"});
+
+    res.json(task)
+
+    
   } catch (error) {
     res.status(500).json({ message: "Error fetching tasks", error });
   }
